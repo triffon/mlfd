@@ -1,9 +1,86 @@
-; $Id: etsmd.scm,v 0.25 2015-09-12 14h45 Dan Hernest $
+; $Id: etsmd.scm,v 0.25 2015-08-30 20h09 Dan Hernest $
 ; Extracted terms for the modal Dialectica interpretation
-; impnc seen as Kreisel imp; based on etsd.scm of Summer 2015
-; term.scm must not be changed; rather use a termd.scm
 ; ======================================================
 
+;==================== BEGIN of necessary changes in term.scm ===============
+;; We temporarily stipulate that inductively defined predicates have
+;; neither positive nor negative content.
+
+(define (formula-of-nulltypep? formula)
+  (cond
+   ((bicon-form? formula)
+    (let ((bicon (bicon-form-to-bicon formula))
+	  (left (bicon-form-to-left formula))
+	  (right (bicon-form-to-right formula)))
+      (case bicon
+	((imp) 
+	 (and (formula-of-nulltypen? left) (formula-of-nulltypep? right)))
+;==================== CORRECT treatment of (impnc)  ========================	
+	((impnc) (formula-of-nulltypep? right))
+;===========================================================================	
+	((and tensor andd andl andr andu)
+	 (and (formula-of-nulltypep? left) (formula-of-nulltypep? right)))
+	((ord orl orr oru) #f)
+	(else (myerror "formula-of-nulltypep?" "bicon expected" bicon)))))
+   ((quant-form? formula)
+    (let ((quant (quant-form-to-quant formula))
+	  (kernel (quant-form-to-kernel formula)))
+      (case quant
+	((all allnc) (formula-of-nulltypep? kernel))
+	((ex exd exl exdt exlt) #f)
+	((exr exu exrt exut exnc) (formula-of-nulltypep? kernel))
+	((exca excl excu) (formula-of-nulltypep? (unfold-formula formula)))
+	(else (myerror "formula-of-nulltypep?" "quant expected" quant)))))
+   ((predicate-form? formula)
+    (let ((pred (predicate-form-to-predicate formula)))
+      (cond ((pvar-form? pred) (not (pvar-with-positive-content? pred)))
+	    ((predconst-form? pred) #t)
+	    ((idpredconst-form? pred) #t))))
+   ((atom-form? formula) #t)
+   (else (myerror "formula-of-nulltypep?" "formula expected" formula))))
+
+(define (formula-of-nulltypen? formula)
+  (cond
+   ((bicon-form? formula)
+    (let ((bicon (bicon-form-to-bicon formula))
+	  (left (bicon-form-to-left formula))
+	  (right (bicon-form-to-right formula)))
+      (case bicon
+	((imp impnc)
+	 (and (formula-of-nulltypep? left) (formula-of-nulltypen? right)))
+	((and tensor andd andl andr andu)
+	 (and (formula-of-nulltypen? left) (formula-of-nulltypen? right)))
+	((ord orl orr oru)
+	 (and (formula-of-nulltypen? left) (formula-of-nulltypen? right)))
+	(else (myerror "formula-of-nulltypen?" "bicon expected" bicon)))))
+   ((quant-form? formula)
+    (let ((quant (quant-form-to-quant formula))
+	  (kernel (quant-form-to-kernel formula)))
+      (case quant
+	((all) #f)
+;==================== CORRECT treatment of (allnc)  ========================		
+	((allnc) (formula-of-nulltypen? kernel))
+;===========================================================================	
+	((ex exd exl exdt exlt exr exu exrt exut exnc)
+	 (formula-of-nulltypen? kernel))
+	((exca excl excu) (formula-of-nulltypen? (unfold-formula formula)))
+	(else (myerror "formula-of-nulltypen?" "quant expected" quant)))))
+   ((predicate-form? formula)
+    (let ((pred (predicate-form-to-predicate formula)))
+      (cond ((pvar-form? pred) (not (pvar-with-negative-content? pred)))
+	    ((predconst-form? pred) #t)
+	    ((idpredconst-form? pred) #t))))
+   ((atom-form? formula) #t)
+   (else (myerror "formula-of-nulltypen?" "formula expected" formula))))
+;==================== END of necessary changes in term.scm ===============
+
+;; DISPLAY PROCEDURES
+
+(define SNL (string #\newline))
+(define SBK (string #\backspace))
+(define SBK2 (string-append SBK SBK))
+(define SBK3 (string-append SBK SBK2))
+(set! COMENTARIU #t)
 (define (not-null? x) (if (null? x) #f #t))
 
 (define (EqVar? var1 var2)
@@ -12,27 +89,11 @@
 	   (= (var-to-index var1) (var-to-index var2))
 	   (string=? (var-to-name var1) (var-to-name var2)))))
 
-(define (md-union . x)
-  (cond ((null? x) '())
-	((list? (car x)) (if (null? (car x)) (apply md-union (cdr x))
-	 (remove-duplicates (append (car x) (apply md-union (cdr x))))))
-	(else (myerror "union: list expected" (car x)))))
-
-;; DISPLAY PROCEDURES in use mainly for built-in Debugger; serious
-;; Warnings and possible Errors are to be printed through (comment .. )
-
-(define SNL (string #\newline)) ; String NewLine
-(define SBK (string #\backspace)) ; String BackSpace
-(define SBK2 (string-append SBK SBK)) ; Two SBK
-(define SBK3 (string-append SBK SBK2)) ; Three SBK
-
-(set! COMENTARIU #f) ; Comment Flag for the built-in Debugger
-
-(define (MDCMT . x) ; write a commented message and insert a 
-  (if COMENTARIU    ; (newline) at the end ; take a number of 
-      (if (not-null? x) ; strings as arguments (to be displayed 
-          (begin        ; separated by space) or 'CNL for going
-            (newline) (display "; ") ; to a commented new line
+(define (MDCMT . x)
+  (if COMENTARIU
+      (if (not-null? x)
+          (begin
+            (newline) (display "; ")
             (do ((l x (cdr l)))
                 ((null? l) (newline))
               (case (car l)
@@ -41,10 +102,10 @@
                   (display " ")
                   (display (car l)))))))))
 
-(define (MDCMF . x) ; same as MDCMT, but no (newline) at
-  (if COMENTARIU    ; the end of display: useful for not having
-      (if (not-null? x) ; empty-line gaps in the display of 
-          (begin    ; debugging messages which flood the screen
+(define (MDCMF . x)
+  (if COMENTARIU
+      (if (not-null? x)
+          (begin
             (newline) (display "; ")
             (do ((l x (cdr l)))
                 ((null? l) (display " "))
@@ -59,6 +120,7 @@
 
 (define (cmdisplay .  strings)  
   (newline) (display "; ") (display strings) (newline))
+
 
 (define (avars-and-chals-to-screen avars-and-chals)
  (begin (MDCMF "Display of avars-and-chals BGN")
@@ -85,8 +147,6 @@
 
 ; END of Display procedures; begin of real file
 
-; variants of term procedures that take 'eps into account
-; perhaps a proper nullterm should be introduced instead 
 (define (md-term-to-free term)
   (if (eq? 'eps term) '() (term-to-free term)))
 
@@ -97,6 +157,13 @@
   (if (eq? 'eps term) term (nt term)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define (md-union . x)
+  (cond ((null? x) '())
+	((list? (car x)) (if (null? (car x)) (apply md-union (cdr x))
+	 (remove-duplicates (append (car x) (apply md-union (cdr x))))))
+	(else (myerror "union: list expected" (car x)))))
+
 
 (define (formula-to-etmdp-type formula)
   (car (formula-to-etmd-types formula)))
@@ -140,7 +207,7 @@
 	    (prev-conc (formula-to-etmd-types
 			 (imp-form-to-conclusion formula)))
 	    (etmdp-type-prem (car prev-prem))
-	    ;(etmdn-type-prem (cadr prev-prem)); redundant for Kreisel imp
+	    ;(etmdn-type-prem (cadr prev-prem))
 	    (etmdp-type-conc (car prev-conc))
 	    (etmdn-type-conc (cadr prev-conc)))
        (list (make-arrow-et etmdp-type-prem etmdp-type-conc)
@@ -176,9 +243,9 @@
 ; Often we have to check whether a formula has positive or negative
 ; computational content.  This can be done without computing its
 ; etmd-types, by using formula-of-nulltypep? and formula-of-nulltypen?
-; (defined in term.scm). MDH: However allnc and --> were treated as all 
-; and -> respectively in etsd.scm, since --> had been intended for
-; MR+A-translation only, and allnc was not operational for Dialectica
+; (defined in term.scm). MDH: However allnc and --> are treated as all 
+; and -> respectively, as they need to be translated to them; hence it's
+; in fact a pseudo-nulltype, simply a technical device used in the translation 
 
 ; make-pvar-to-md-pvar returns a procedure associating Dialectica pvars
 ; to predicate variables.  Remembers the assignment done so far.
@@ -299,8 +366,8 @@
 	    (n1? (formula-of-nulltypen? prem))
 	    (p2? (formula-of-nulltypep? conc))
 	    (n2? (formula-of-nulltypen? conc))
-	    (DBG (MDCMF " chal is " (md-term-to-string chal))) ; md-term-to-string
-	    (DBG (MDCMF " real is " (md-term-to-string real)))
+	    (DBG (MDCMF " chal is " (term-to-string chal)))
+	    (DBG (MDCMF " real is " (term-to-string real)))
 	    (real1
 	     (if p1? 'eps (if n2? chal (make-term-in-lcomp-form chal)))) ;x
 	    (chal2
@@ -474,7 +541,7 @@
 
 (define (make-term-in-if-form-et test alts) ;rest empty 
   (if (eq? (car alts) 'eps)
-      (begin (MDCMF "make-term-in-if-form-et: alts are eps") 'eps)
+      (begin (nldisplay "make-term-in-if-form-et: alts are eps") 'eps)
   (make-term-in-if-form test alts)))
 
 (define (make-term-in-pair-form-et term-or-eps1 term-or-eps2)
@@ -935,8 +1002,8 @@
 							     avar-chal-alist))
 					    (typen (avar-to-etmdn-type avar avarFlag-to-varFlag)))
 				       (cond
-					((nulltype? typen) ; MDH: this may be redundant in etsd.scm already
-					 (begin (MDCMT "ERROR? not-redundant") 'eps)) 
+					((nulltype? typen) ;; MDH: this is redundant
+					 (begin (nldisplay "ERROR? not-redundant") 'eps)) 
 					(info (cadr info))
 					(else (type-to-canonical-inhabitant
 					       typen)))))
@@ -1279,7 +1346,7 @@
 	   (cons real avars-and-subst-chals))))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; MDH - BGN impnc-elim 9 Oct 2013 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; terms-to-fr
       ((proof-in-impnc-elim-form)
 	 (let* ((DUMMY (MDCMF "impnc-elim: BGN for " (formula-to-string (proof-to-formula proof))))
 		(arg (proof-in-impnc-elim-form-to-arg proof))
@@ -1302,7 +1369,7 @@
 		(arg-y (formula-of-typen-to-var arg-fmla))
 		(DUMMY (MDCMF "impnc-elim: 6" (var-to-string arg-y)))
 		(isyfree? (member-wrt EqVar? arg-y arg-free-set))
-		(DUMMY (if isyfree? (comment "proof-to-extracted-md-terms-aux: ? illegal --> elim")
+		(DUMMY (if isyfree? (nldisplay "proof-to-extracted-md-terms-aux: ? illegal --> elim")
 			   (MDCMF "impnc-elim: 7"))))
 	       (let* ((arg-real (car arg-prev)) ;s
 		(DUMMY (MDCMF "impnc-elim: 8"))
